@@ -94,6 +94,8 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
   }
 
   let result = quote! {
+    use serde::{Serialize, Deserialize};
+
     pub type RequestProcessor<Req, Rep> = dyn FnMut(Req) -> Rep + Send + Sync;
 
     #[derive(Debug)]
