@@ -96,7 +96,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
   let result = quote! {
     use serde::{Serialize, Deserialize};
 
-    pub type RequestProcessor<Req, Rep> = dyn FnMut(Req) -> Rep + Send + Sync;
+    pub type RequestProcessor<Req, Rep> = dyn Fn(Req) -> Rep + Send + Sync;
 
     #[derive(Debug)]
     pub enum Error {
@@ -116,7 +116,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
     pub trait #name_service: Sized + Sync + Send + 'static {
       #(#methods)*
 
-      fn get_processor(mut self) -> Box<RequestProcessor<Request, Response>> {
+      fn get_processor(self) -> Box<RequestProcessor<Request, Response>> {
         Box::new(move |msg| match msg {
           #(#handlers)*
         })

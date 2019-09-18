@@ -2,6 +2,7 @@ use std::str::FromStr;
 use std::option::IntoIter;
 use std::net::{SocketAddr, IpAddr, ToSocketAddrs};
 use std::io;
+use std::fmt;
 
 #[derive(Clone, Debug)]
 pub enum Address {
@@ -20,6 +21,15 @@ impl Address {
     match r {
       Ok(addr) => Address::Socket(addr),
       Err(_) => Address::Local(String::from(addr)),
+    }
+  }
+}
+
+impl fmt::Display for Address {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Address::Local(value) => write!(f, "{}", value),
+      Address::Socket(addr) => write!(f, "{}", addr),
     }
   }
 }

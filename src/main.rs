@@ -3,28 +3,79 @@ extern crate serde;
 pub mod group;
 pub mod transport;
 
+use std::io;
+use std::fmt;
+use std::sync::mpsc;
 use transport::*;
+use group::Address;
 
-pub struct Server;
+pub struct Server {
+  stop_tx: Option<mpsc::SyncSender<()>>,
+  addr: Option<Address>,
+}
 
 impl Server {
   pub fn new() -> Server {
-    Server {}
+    Server {
+      stop_tx: None,
+      addr: None,
+    }
   }
 
-  pub fn run<Req: 'static, Rep: 'static>(&self, p: Box<RequestProcessor<Req, Rep>>, t: impl ServerTransport<Req, Rep>) {
-    let p = Box::new(p);
+  pub fn run<Req: 'static, Rep: 'static>(&mut self, p: Box<RequestProcessor<Req, Rep>>, t: impl ServerTransport<Req, Rep>) {
+    self.addr = Some(t.get_addr());
+    let mut t = t;
+
+    let (tx, rx) = mpsc::sync_channel(1);
+    self.stop_tx = Some(tx);
+
+    t.connect().unwrap();
+
+    println!("Server has started. Listening for incoming requests...");
 
     std::thread::spawn(move || {
-      println!("Server has started. Listening for incoming requests...");
-
-      t.listen(p);
+      loop {
+        match t.next(&p) {
+          Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+            match rx.try_recv() {
+              Ok(_) => return,
+              _ => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+              },
+            }
+          },
+          Err(e) => {
+            println!("Error: {}", e);
+            return;
+          }
+          _ => (),
+        }
+      }
     });
+  }
+}
+
+impl fmt::Display for Server {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "Server[{}]", self.addr.as_ref().unwrap())
+  }
+}
+
+impl Drop for Server {
+  fn drop(&mut self) {
+    let tx = self.stop_tx.as_ref().unwrap();
+
+    if let Err(ref e) = tx.send(()) {
+      println!("Close error: {}", e);
+    }
+
+    println!("{} has been closed.", self);
   }
 }
 
 #[cfg(test)]
 mod tests {
+  use std::sync::atomic::{AtomicU64, Ordering};
   use super::*;
   use super::group::Address;
 
@@ -45,9 +96,9 @@ mod tests {
 
     let addr = Address::from_str("127.0.0.1:2000");
 
-    let srv = Server::new();
+    let mut srv = Server::new();
     let service = HelloService{};
-    srv.run(Box::new(service.get_processor()), TcpServerTransport::new(addr.clone()));
+    srv.run(service.get_processor(), TcpServerTransport::new(addr.clone()));
 
     let c = HelloClient::new(TcpClientTransport::new(addr));
     let msg = String::from("deadbeef");
@@ -59,25 +110,25 @@ mod tests {
   fn counter() {
     #[rpc_macro::service]
     trait Counter {
-      fn counter(&mut self, v: u64) -> u64;
+      fn counter(&self, v: u64) -> u64;
     }
 
     struct CounterService {
-      value: u64,
+      value: AtomicU64,
     }
 
     impl Counter for CounterService {
-      fn counter(&mut self, v: u64) -> u64 {
-        self.value += v;
-        self.value
+      fn counter(&self, v: u64) -> u64 {
+        let prev = self.value.fetch_add(v, Ordering::Relaxed);
+        prev + v
       }
     }
 
     let addr = Address::from_str("127.0.0.1:2001");
 
-    let srv = Server::new();
-    let service = CounterService{value: 0};
-    srv.run(Box::new(service.get_processor()), TcpServerTransport::new(addr.clone()));
+    let mut srv = Server::new();
+    let service = CounterService{value: AtomicU64::new(0)};
+    srv.run(service.get_processor(), TcpServerTransport::new(addr.clone()));
 
     let c = CounterClient::new(TcpClientTransport::new(addr));
     c.counter(1).unwrap();

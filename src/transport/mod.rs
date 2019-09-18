@@ -1,11 +1,16 @@
 mod tcp;
 
+use std::io;
+use super::group::Address;
+
 pub use tcp::*;
 
-pub type RequestProcessor<Req, Rep> = dyn FnMut(Req) -> Rep + Send + Sync;
+pub type RequestProcessor<Req, Rep> = dyn Fn(Req) -> Rep + Send + Sync;
 
 pub trait ServerTransport<Req, Rep>: Send + Sync + 'static {
-  fn listen(&self, f: Box<RequestProcessor<Req, Rep>>);
+  fn get_addr(&self) -> Address;
+  fn connect(&mut self) -> io::Result<()>;
+  fn next(&self, f: &RequestProcessor<Req, Rep>) -> io::Result<()>;
 }
 
 pub struct Connection<Req, Rep> {

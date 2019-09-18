@@ -1,18 +1,23 @@
 extern crate serde;
 
+use std::io;
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, TcpListener};
 use serde::{Deserialize, Serialize};
 use super::*;
 use super::super::{RequestProcessor, group::Address};
 
 pub struct TcpServerTransport {
   addr: Address,
+  socket: Option<TcpListener>,
 }
 
 impl TcpServerTransport {
   pub fn new(addr: Address) -> TcpServerTransport {
-    TcpServerTransport{ addr }
+    TcpServerTransport{
+      addr,
+      socket: None,
+    }
   }
 }
 
@@ -21,24 +26,35 @@ where
   for<'de> Req: Deserialize<'de>,
   Rep: Serialize
 {
-  fn listen(&self, f: Box<RequestProcessor<Req, Rep>>) {
-    let listener = std::net::TcpListener::bind(self.addr.clone()).unwrap();
+  fn get_addr(&self) -> Address {
+    self.addr.clone()
+  }
 
-    let mut f = f;
+  fn connect(&mut self) -> io::Result<()> {
+    let socket = TcpListener::bind(self.addr.clone())?;
+    socket.set_nonblocking(true)?;
 
-    for stream in listener.incoming() {
-      let mut stream = stream.unwrap();
+    self.socket = Some(socket);
 
-      let mut buf = [0; 128];
-      let size = stream.read(&mut buf).unwrap();
+    Ok(())
+  }
 
-      let msg = serde_json::from_slice(&buf[0..size]).unwrap();
+  fn next(&self, f: &RequestProcessor<Req, Rep>) -> io::Result<()> {
+    let socket = self.socket.as_ref().unwrap();
 
-      let reply = f(msg);
+    let (mut stream, _) = socket.accept()?;
 
-      let bout = serde_json::to_vec(&reply).unwrap();
-      stream.write_all(&bout[..]).unwrap();
-    }
+    let mut buf = [0; 128];
+    let size = stream.read(&mut buf)?;
+
+    let msg = serde_json::from_slice(&buf[0..size])?;
+
+    let reply = f(msg);
+
+    let bout = serde_json::to_vec(&reply)?;
+    stream.write_all(&bout[..])?;
+
+    Ok(())
   }
 }
 
