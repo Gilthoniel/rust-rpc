@@ -7,6 +7,7 @@ use group::Address;
 use std::fmt;
 use std::io;
 use std::sync::{mpsc, Arc};
+use std::time::Duration;
 use transport::*;
 
 pub struct Server {
@@ -43,10 +44,8 @@ impl Server {
             loop {
                 match t.next(Arc::clone(&p)) {
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => match rx.try_recv() {
-                        Ok(_) => return,
-                        _ => {
-                            std::thread::sleep(std::time::Duration::from_millis(50));
-                        }
+                        Ok(_) => return, // received close announcement
+                        _ => t.wait(Duration::from_millis(100)).unwrap(),
                     },
                     Err(e) => {
                         println!("Error: {}", e);
@@ -104,7 +103,7 @@ mod tests {
         let service = HelloService {};
         srv.run(
             service.get_processor(),
-            TcpServerTransport::new(addr.clone()),
+            TcpServerTransport::new(addr.clone()).unwrap(),
         );
 
         let c = HelloClient::new(TcpClientTransport::new(addr));
@@ -144,12 +143,12 @@ mod tests {
         };
         srv.run(
             service.get_processor(),
-            TcpServerTransport::new(addr.clone()),
+            TcpServerTransport::new(addr.clone()).unwrap(),
         );
 
         let mut threads = Vec::new();
         let n = 5;
-        let k = 50;
+        let k = 10;
         for _ in 0..n {
             let addr = addr.clone();
             let h = std::thread::spawn(move || {

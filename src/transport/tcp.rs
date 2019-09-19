@@ -1,11 +1,14 @@
 extern crate serde;
+extern crate mio;
 
 use super::super::{group::Address, RequestProcessor};
 use super::*;
 use serde::{Deserialize, Serialize};
+use mio::{Poll, Events, Token, Ready, PollOpt};
 use std::io;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use mio::net::{TcpListener};
+use std::net::TcpStream;
 use std::thread;
 
 /// ServerTransport implementation over TCP and using
@@ -13,13 +16,20 @@ use std::thread;
 pub struct TcpServerTransport {
     addr: Address,
     socket: Option<TcpListener>,
+    poll: Poll,
+    events: Events,
 }
 
 impl TcpServerTransport {
     /// Create a transport object. The socket will be bind to
     /// the given address.
-    pub fn new(addr: Address) -> TcpServerTransport {
-        TcpServerTransport { addr, socket: None }
+    pub fn new(addr: Address) -> io::Result<TcpServerTransport> {
+        Ok(TcpServerTransport {
+            addr,
+            socket: None,
+            poll: Poll::new()?,
+            events: Events::with_capacity(1),
+        })
     }
 }
 
@@ -36,8 +46,9 @@ where
     /// Try to bind to the socket address and set the socket if
     /// successfull, otherwise the result contains the error.
     fn connect(&mut self) -> io::Result<()> {
-        let socket = TcpListener::bind(self.addr.clone())?;
-        socket.set_nonblocking(true)?;
+        let socket = TcpListener::bind(&self.addr.get_socket_addr().unwrap())?;
+
+        self.poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
 
         self.socket = Some(socket);
 
@@ -49,7 +60,7 @@ where
     fn next(&self, f: Arc<Box<RequestProcessor<Req, Rep>>>) -> io::Result<()> {
         let socket = self.socket.as_ref().unwrap();
 
-        let (mut stream, _) = socket.accept()?;
+        let (mut stream, _) = socket.accept_std()?;
 
         thread::spawn(move || -> io::Result<()> {
             let mut buf = [0; 128];
@@ -63,6 +74,12 @@ where
             stream.write_all(&bout[..])?;
             Ok(())
         });
+
+        Ok(())
+    }
+
+    fn wait(&mut self, timeout: Duration) -> io::Result<()> {
+        self.poll.poll(&mut self.events, Some(timeout))?;
 
         Ok(())
     }
@@ -93,7 +110,7 @@ where
 
         Connection {
             tx: Box::new(move |msg| {
-                let mut stream = TcpStream::connect(addr.clone()).unwrap();
+                let mut stream = TcpStream::connect(&addr.get_socket_addr().unwrap()).unwrap();
 
                 let bin = serde_json::to_vec(&msg).unwrap();
                 stream.write_all(&bin).unwrap();

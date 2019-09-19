@@ -3,6 +3,7 @@ mod tcp;
 use super::group::Address;
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use tcp::*;
 
@@ -19,6 +20,8 @@ pub trait ServerTransport<Req, Rep>: Send + Sync + 'static {
     /// Serve the next incoming connection using the processor
     /// to generate the response.
     fn next(&self, f: Arc<Box<RequestProcessor<Req, Rep>>>) -> io::Result<()>;
+    /// Sleep until a IO event is triggered on the transport.
+    fn wait(&mut self, timeout: Duration) -> io::Result<()>;
 }
 
 /// Connection created by a client transport to talk with a server.

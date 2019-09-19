@@ -14,6 +14,13 @@ pub enum Address {
 }
 
 impl Address {
+    pub fn get_socket_addr(&self) -> Option<SocketAddr> {
+        match self {
+            Address::Socket(addr) => Some(addr.clone()),
+            _ => None,
+        }
+    }
+
     /// Create an address from an IP and a port. The resulting
     /// address will be distant.
     pub fn from_ip(ip: IpAddr, port: u16) -> Address {

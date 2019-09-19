@@ -10,3 +10,4 @@ edition = "2018"
 rpc_macro = { path = "rpc_macro", version = "0.1" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+mio = "0.6"
