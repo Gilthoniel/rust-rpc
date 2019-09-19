@@ -118,7 +118,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
 
       fn get_processor(self) -> Box<RequestProcessor<Request, Response>> {
         Box::new(move |msg| match msg {
-          #(#handlers)*
+          #(#handlers),*
         })
       }
     }
