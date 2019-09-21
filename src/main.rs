@@ -2,12 +2,14 @@ extern crate serde;
 
 pub mod group;
 pub mod transport;
+pub mod executor;
 
 use group::Address;
 use std::fmt;
 use std::io;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
+use std::thread::JoinHandle;
 use transport::*;
 use serde::{Serialize, Deserialize};
 
@@ -32,6 +34,7 @@ pub enum Response<T> {
 pub struct Server {
     stop_tx: Option<mpsc::SyncSender<()>>,
     addr: Option<Address>,
+    th: Option<JoinHandle<()>>,
 }
 
 impl Server {
@@ -39,6 +42,7 @@ impl Server {
         Server {
             stop_tx: None,
             addr: None,
+            th: None,
         }
     }
 
@@ -57,7 +61,7 @@ impl Server {
 
         println!("{} has started. Listening for incoming requests...", self);
 
-        std::thread::spawn(move || {
+        self.th = Some(std::thread::spawn(move || {
             let p = Arc::new(p);
 
             loop {
@@ -73,7 +77,7 @@ impl Server {
                     _ => (),
                 }
             }
-        });
+        }));
     }
 }
 
@@ -90,6 +94,9 @@ impl Drop for Server {
         if let Err(ref e) = tx.send(()) {
             println!("Close error: {}", e);
         }
+
+        // Make sure the main thread is stopped.
+        self.th.take().unwrap().join().unwrap();
 
         println!("{} has been closed.", self);
     }

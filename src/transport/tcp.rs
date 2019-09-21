@@ -1,7 +1,13 @@
 extern crate serde;
 extern crate mio;
 
-use super::super::{group::Address, RequestProcessor, Response, RPCError};
+use super::super::{
+    group::Address,
+    executor::ThreadPool,
+    RequestProcessor,
+    Response,
+    RPCError,
+};
 use super::*;
 use serde::{Deserialize, Serialize};
 use mio::{Poll, Events, Token, Ready, PollOpt};
@@ -9,7 +15,6 @@ use std::io;
 use std::io::{Read, Write};
 use mio::net::{TcpListener};
 use std::net::{TcpStream, Shutdown};
-use std::thread;
 use std::fmt::Debug;
 use std::error::Error;
 
@@ -21,6 +26,7 @@ const WRITE_TIMEOUT: Option<Duration> = Some(Duration::from_millis(5000));
 pub struct TcpServerTransport {
     addr: Address,
     socket: Option<TcpListener>,
+    pool: ThreadPool,
     poll: Poll,
     events: Events,
 }
@@ -32,6 +38,7 @@ impl TcpServerTransport {
         Ok(TcpServerTransport {
             addr,
             socket: None,
+            pool: ThreadPool::new(4),
             poll: Poll::new()?,
             events: Events::with_capacity(1),
         })
@@ -67,7 +74,7 @@ where
 
         let (mut stream, _) = socket.accept_std()?;
 
-        thread::spawn(move || -> io::Result<()> {
+        self.pool.execute(move || -> io::Result<()> {
             stream.set_read_timeout(READ_TIMEOUT)?;
             stream.set_write_timeout(WRITE_TIMEOUT)?;
 

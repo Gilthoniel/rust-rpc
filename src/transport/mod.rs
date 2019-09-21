@@ -12,7 +12,7 @@ pub use tcp::*;
 pub type RequestProcessor<Req, Rep> = dyn Fn(Request<Req>) -> Response<Rep> + Send + Sync;
 
 /// A server transport defines how the server will receive requests.
-pub trait ServerTransport<Req, Rep>: Send + Sync + 'static {
+pub trait ServerTransport<Req, Rep>: Send + 'static {
     /// Get the address that identify the server.
     fn get_addr(&self) -> Address;
     /// Start to listen for incoming requests.
