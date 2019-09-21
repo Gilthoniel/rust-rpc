@@ -29,7 +29,7 @@ fn derive_handler_arm(sig: &Signature, name: &Ident) -> Arm {
   let func_name = &sig.ident;
 
   syn::parse_quote! {
-    Request::#name(arg) => Response::#name(self.#func_name(arg))
+    Request::Data(ClientData::#name(arg)) => Response::Data(ServerData::#name(self.#func_name(arg)))
   }
 }
 
@@ -39,12 +39,13 @@ fn derive_client_func(sig: &Signature, name: &Ident, param: &Type, out: &Type) -
   let func_name = &sig.ident;
 
   syn::parse_quote! {
-    pub fn #func_name(&self, arg: #param) -> Result<#out, Error> {
-      let r = self.send_message(Request::#name(arg));
+    pub fn #func_name(&self, arg: #param) -> Result<#out, RPCError> {
+      let r = self.send_message(Request::Data(ClientData::#name(arg)));
         
       match r {
-        Response::#name(value) => Ok(value),
-        _ => Err(Error::NoMatchingResponse),
+        Response::Data(ServerData::#name(value)) => Ok(value),
+        Response::Error(err) => Err(err),
+        _ => Err(RPCError::NoMatchingResponse),
       }
     }
   }
@@ -95,28 +96,28 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
 
   let result = quote! {
     use serde::{Serialize, Deserialize};
-
-    pub type RequestProcessor<Req, Rep> = dyn Fn(Req) -> Rep + Send + Sync;
-
-    #[derive(Debug)]
-    pub enum Error {
-      NoMatchingResponse
-    }
+    use super::{Request, Response, RPCError};
 
     /// Request enumerates the list of possible request messages sent
     /// by clients to a server to execute a request.
-    #[derive(Serialize, Deserialize)]
-    pub enum Request { #requests }
+    #[derive(Serialize, Deserialize, Debug)]
+    pub enum ClientData { #requests }
+
+    type ClientMessage = Request<ClientData>;
 
     /// Response enumerates the list of possible response messages sent
     /// by the server to a client after processing a request.
-    #[derive(Serialize, Deserialize)]
-    pub enum Response { #responses }
+    #[derive(Serialize, Deserialize, Debug)]
+    pub enum ServerData { #responses }
+
+    type ServerMessage = Response<ServerData>;
+
+    pub type RequestProcessor = dyn Fn(ClientMessage) -> ServerMessage + Send + Sync;
 
     pub trait #name_service: Sized + Sync + Send + 'static {
       #(#methods)*
 
-      fn get_processor(self) -> Box<RequestProcessor<Request, Response>> {
+      fn get_processor(self) -> Box<RequestProcessor> {
         Box::new(move |msg| match msg {
           #(#handlers),*
         })
@@ -124,15 +125,15 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     pub struct #client_name {
-      s: Connection<Request, Response>,
+      s: Connection<ClientMessage, ServerMessage>,
     }
 
     impl #client_name {
-      fn new(t: impl ClientTransport<Request, Response>) -> #client_name {
+      fn new(t: impl ClientTransport<ClientMessage, ServerMessage>) -> #client_name {
         #client_name { s: t.connect() }
       }
 
-      fn send_message(&self, msg: Request) -> Response {
+      fn send_message(&self, msg: ClientMessage) -> ServerMessage {
         self.s.send(msg)
       }
 

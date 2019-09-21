@@ -1,6 +1,6 @@
 mod tcp;
 
-use super::group::Address;
+use super::{group::Address, Request, Response};
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,7 +9,7 @@ pub use tcp::*;
 
 /// Processor created by services that will be used by the server
 /// to process the requests sent by the clients.
-pub type RequestProcessor<Req, Rep> = dyn Fn(Req) -> Rep + Send + Sync;
+pub type RequestProcessor<Req, Rep> = dyn Fn(Request<Req>) -> Response<Rep> + Send + Sync;
 
 /// A server transport defines how the server will receive requests.
 pub trait ServerTransport<Req, Rep>: Send + Sync + 'static {

@@ -9,6 +9,25 @@ use std::io;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use transport::*;
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RPCError {
+    BadRequest,
+    NoMatchingResponse,
+    DecodingError(String),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Request<T> {
+    Data(T),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Response<T> {
+    Error(RPCError),
+    Data(T),
+}
 
 pub struct Server {
     stop_tx: Option<mpsc::SyncSender<()>>,

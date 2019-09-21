@@ -1,15 +1,20 @@
 extern crate serde;
 extern crate mio;
 
-use super::super::{group::Address, RequestProcessor};
+use super::super::{group::Address, RequestProcessor, Response, RPCError};
 use super::*;
 use serde::{Deserialize, Serialize};
 use mio::{Poll, Events, Token, Ready, PollOpt};
 use std::io;
 use std::io::{Read, Write};
 use mio::net::{TcpListener};
-use std::net::TcpStream;
+use std::net::{TcpStream, Shutdown};
 use std::thread;
+use std::fmt::Debug;
+use std::error::Error;
+
+const READ_TIMEOUT: Option<Duration> = Some(Duration::from_millis(5000));
+const WRITE_TIMEOUT: Option<Duration> = Some(Duration::from_millis(5000));
 
 /// ServerTransport implementation over TCP and using
 /// JSON to serialize the messages.
@@ -33,7 +38,7 @@ impl TcpServerTransport {
     }
 }
 
-impl<Req: 'static, Rep: 'static> ServerTransport<Req, Rep> for TcpServerTransport
+impl<Req: Debug + 'static, Rep: Debug + 'static> ServerTransport<Req, Rep> for TcpServerTransport
 where
     for<'de> Req: Deserialize<'de>,
     Rep: Serialize,
@@ -63,15 +68,29 @@ where
         let (mut stream, _) = socket.accept_std()?;
 
         thread::spawn(move || -> io::Result<()> {
-            let mut buf = [0; 128];
-            let size = stream.read(&mut buf)?;
+            stream.set_read_timeout(READ_TIMEOUT)?;
+            stream.set_write_timeout(WRITE_TIMEOUT)?;
 
-            let msg = serde_json::from_slice(&buf[0..size])?;
+            let mut buf = Vec::new();
+            stream.read_to_end(&mut buf)?;
 
-            let reply = f(msg);
+            let out: Vec<u8>;
+            match serde_json::from_slice(&buf[..]) {
+                Ok(msg) => {
+                    let reply = f(msg);
 
-            let bout = serde_json::to_vec(&reply)?;
-            stream.write_all(&bout[..])?;
+                    out = serde_json::to_vec(&reply)?;
+                },
+                Err(e) => {
+                    println!("Decoding Error: {}", e);
+                    let desc = String::from(e.description());
+                    let reply: Response<Rep> = Response::Error(RPCError::DecodingError(desc));
+
+                    out = serde_json::to_vec(&reply)?;
+                },
+            };
+
+            stream.write_all(&out[..])?;
             Ok(())
         });
 
@@ -114,6 +133,7 @@ where
 
                 let bin = serde_json::to_vec(&msg).unwrap();
                 stream.write_all(&bin).unwrap();
+                stream.shutdown(Shutdown::Write).unwrap();
 
                 let mut buf = Vec::new();
                 stream.read_to_end(&mut buf).unwrap();
