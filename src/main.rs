@@ -15,6 +15,8 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use transport::*;
 
+pub type ServiceResult<T> = Result<T, String>;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request<T> {
     Data(T),
@@ -107,14 +109,14 @@ mod tests {
     fn hello_world() -> RpcResult<()> {
         #[rpc_macro::service]
         trait Hello {
-            fn hello(&self, arg: String) -> String;
+            fn hello(&self, arg: String) -> ServiceResult<String>;
         }
 
         struct HelloService;
 
         impl Hello for HelloService {
-            fn hello(&self, arg: String) -> String {
-                arg
+            fn hello(&self, arg: String) -> ServiceResult<String> {
+                Ok(arg)
             }
         }
 
@@ -135,12 +137,15 @@ mod tests {
         Ok(())
     }
 
+    const COUNTER_ERROR: &str = "increment must be above zero";
+
     #[test]
-    fn counter() -> RpcResult<()> {
+    #[should_panic(expected = "increment must be above zero")]
+    fn counter() {
         #[rpc_macro::service]
         trait Counter {
-            fn counter(&self, v: u64) -> u64;
-            fn fetch(&self, v: u64) -> u64;
+            fn counter(&self, v: u64) -> ServiceResult<u64>;
+            fn fetch(&self, v: u64) -> ServiceResult<u64>;
         }
 
         struct CounterService {
@@ -148,13 +153,17 @@ mod tests {
         }
 
         impl Counter for CounterService {
-            fn counter(&self, v: u64) -> u64 {
+            fn counter(&self, v: u64) -> ServiceResult<u64> {
+                if v == 0 {
+                    return Err(COUNTER_ERROR.to_string());
+                }
+
                 let prev = self.value.fetch_add(v, Ordering::Relaxed);
-                prev + v
+                Ok(prev + v)
             }
 
-            fn fetch(&self, _: u64) -> u64 {
-                self.value.load(Ordering::Relaxed)
+            fn fetch(&self, _: u64) -> ServiceResult<u64> {
+                Ok(self.value.load(Ordering::Relaxed))
             }
         }
 
@@ -188,27 +197,28 @@ mod tests {
         }
 
         for th in threads {
-            th.join().unwrap()?;
+            th.join().unwrap().unwrap();
         }
 
         let c = CounterClient::new(TcpClientTransport::new(addr));
-        let r = c.fetch(0)?;
+        let r = c.fetch(0).unwrap();
         assert_eq!(r, n * k);
 
-        Ok(())
+        // This is where it should panic.
+        c.counter(0).unwrap();
     }
 
     #[test]
     fn error() -> RpcResult<()> {
         #[rpc_macro::service]
         trait Byzantine {
-            fn byzantine(&self, arg: u64) -> u64;
+            fn byzantine(&self, arg: u64) -> ServiceResult<u64>;
         }
 
         struct ByzantineService;
 
         impl Byzantine for ByzantineService {
-            fn byzantine(&self, _: u64) -> u64 {
+            fn byzantine(&self, _: u64) -> ServiceResult<u64> {
                 panic!("example panic in test");
             }
         }

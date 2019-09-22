@@ -13,6 +13,8 @@ use syn::{
   Type,
   Ident,
   ItemFn,
+  PathArguments,
+  GenericArgument,
   punctuated::Punctuated,
   token::Comma,
 };
@@ -29,7 +31,14 @@ fn derive_handler_arm(sig: &Signature, name: &Ident) -> Arm {
   let func_name = &sig.ident;
 
   syn::parse_quote! {
-    Request::Data(ClientData::#name(arg)) => Response::Data(ServerData::#name(self.#func_name(arg)))
+    Request::Data(ClientData::#name(arg)) => {
+      let result = self.#func_name(arg);
+
+      match result {
+        Ok(value) => Response::Data(ServerData::#name(value)),
+        Err(err) => Response::Error(ServerError::ProcessorError(err)),
+      }
+    }
   }
 }
 
@@ -77,12 +86,22 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
           panic!("rpc function expects one argument");
         }
 
-        let out: &Type;
-        if let syn::ReturnType::Type(_, ref t) = &m.sig.output {
-          out = t;
-        } else {
-          panic!("rpc function expects one return type");
+        let mut out = None;
+        if let syn::ReturnType::Type(_, t) = &m.sig.output {
+          if let Type::Path(t) = t.as_ref() {
+            let t = &t.path.segments.last().unwrap().arguments;
+
+            if let PathArguments::AngleBracketed(t) = t {
+              let t = t.args.first();
+
+              if let Some(GenericArgument::Type(t)) = t {
+                out = Some(t);
+              }
+            }
+          }
         }
+
+        let out = out.expect("rpc function expect a ServiceResult<T> type or nothing as return");
 
         requests.push(derive_variante(name, param));
         responses.push(derive_variante(name, out));

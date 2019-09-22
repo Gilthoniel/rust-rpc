@@ -6,6 +6,7 @@ use std::fmt;
 pub enum ServerError {
     BadRequest,
     DecodingError(String),
+    ProcessorError(String),
 }
 
 #[derive(Debug)]
