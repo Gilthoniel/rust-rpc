@@ -96,6 +96,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
 
   let result = quote! {
     use serde::{Serialize, Deserialize};
+    use std::panic::RefUnwindSafe;
     use super::{Request, Response, RpcError};
 
     /// Request enumerates the list of possible request messages sent
@@ -112,9 +113,9 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
 
     type ServerMessage = Response<ServerData>;
 
-    pub type RequestProcessor = dyn Fn(ClientMessage) -> ServerMessage + Send + Sync;
+    pub type RequestProcessor = dyn Fn(ClientMessage) -> ServerMessage + Send + Sync + RefUnwindSafe;
 
-    pub trait #name_service: Sized + Sync + Send + 'static {
+    pub trait #name_service: Sized + Sync + Send + RefUnwindSafe + 'static {
       #(#methods)*
 
       fn get_processor(self) -> Box<RequestProcessor> {

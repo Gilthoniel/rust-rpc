@@ -197,4 +197,35 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn error() -> RpcResult<()> {
+        #[rpc_macro::service]
+        trait Byzantine {
+            fn byzantine(&self, arg: u64) -> u64;
+        }
+
+        struct ByzantineService;
+
+        impl Byzantine for ByzantineService {
+            fn byzantine(&self, _: u64) -> u64 {
+                panic!("example panic in test");
+            }
+        }
+
+        let addr = Address::from_str("127.0.0.1:2002");
+
+        let mut srv = Server::new();
+        let service = ByzantineService;
+
+        srv.run(
+            service.get_processor(),
+            TcpServerTransport::new(addr.clone()).unwrap(),
+        );
+
+        let c = ByzantineClient::new(TcpClientTransport::new(addr));
+        assert!(c.byzantine(0).is_err());
+
+        Ok(())
+    }
 }

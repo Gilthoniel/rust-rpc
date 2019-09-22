@@ -3,12 +3,13 @@ mod tcp;
 use super::{group::Address, Request, Response, RpcResult};
 use std::sync::Arc;
 use std::time::Duration;
+use std::panic::RefUnwindSafe;
 
 pub use tcp::*;
 
 /// Processor created by services that will be used by the server
 /// to process the requests sent by the clients.
-pub type RequestProcessor<Req, Rep> = dyn Fn(Request<Req>) -> Response<Rep> + Send + Sync;
+pub type RequestProcessor<Req, Rep> = dyn Fn(Request<Req>) -> Response<Rep> + Send + Sync + RefUnwindSafe;
 
 /// A server transport defines how the server will receive requests.
 pub trait ServerTransport<Req, Rep>: Send + 'static {

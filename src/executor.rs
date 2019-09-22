@@ -1,6 +1,7 @@
 use std::io;
+use std::panic;
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{spawn, JoinHandle};
+use std::thread::{Builder, JoinHandle};
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
@@ -17,7 +18,7 @@ impl<F: FnOnce() -> io::Result<()>> FnBox for F {
     }
 }
 
-type Job = Box<dyn FnBox + Send + 'static>;
+type Job = Box<dyn FnBox + Send + panic::UnwindSafe + 'static>;
 
 impl ThreadPool {
     pub fn new(size: usize) -> ThreadPool {
@@ -40,7 +41,7 @@ impl ThreadPool {
 
     pub fn execute<F>(&self, f: F) -> io::Result<()>
     where
-        F: FnOnce() -> io::Result<()> + Send + 'static,
+        F: FnOnce() -> io::Result<()> + Send + panic::UnwindSafe + 'static,
     {
         let job = Box::new(f);
 
@@ -78,19 +79,36 @@ struct Worker {
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let thread = spawn(move || {
-            loop {
-                if let Ok(job) = receiver.lock().unwrap().recv() {
-                    match job.call_box() {
-                        Err(e) => println!("Worker {} failed a job: {}", id, e),
-                        Ok(_) => (),
+        let thread = Builder::new()
+            .name(format!("worker-thread-{}", id))
+            .spawn(move || {
+                loop {
+                    let receiver = receiver.lock().unwrap();
+
+                    if let Ok(job) = receiver.recv() {
+                        // Force to unlock so that any panics occuring in the handler
+                        // won't poison the lock.
+                        drop(receiver);
+
+                        // Note: some panic might not be unwind
+                        let res = panic::catch_unwind(|| job.call_box());
+
+                        match res {
+                            Err(_) => {
+                                println!("Worker {} caught a panic.", id);
+                            },
+                            Ok(res) => match res {
+                                Err(e) => println!("Worker {} failed a job: {}.", id, e),
+                                Ok(_) => (),
+                            }
+                        }
+                    } else {
+                        // Channel has been closed to shutdown.
+                        return;
                     }
-                } else {
-                    // Channel has been closed to shutdown.
-                    return;
                 }
-            }
-        });
+            })
+            .unwrap();
 
         Worker { id, thread }
     }
