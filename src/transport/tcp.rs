@@ -1,22 +1,23 @@
-extern crate serde;
 extern crate mio;
+extern crate serde;
 
 use super::super::{
-    group::Address,
     executor::ThreadPool,
+    group::Address,
     RequestProcessor,
     Response,
-    RPCError,
+    RpcError,
+    RpcResult,
+    ServerError,
 };
 use super::*;
+use mio::net::TcpListener;
+use mio::{Events, Poll, PollOpt, Ready, Token};
 use serde::{Deserialize, Serialize};
-use mio::{Poll, Events, Token, Ready, PollOpt};
-use std::io;
-use std::io::{Read, Write};
-use mio::net::{TcpListener};
-use std::net::{TcpStream, Shutdown};
-use std::fmt::Debug;
 use std::error::Error;
+use std::fmt::Debug;
+use std::{io, io::{Read, Write}};
+use std::net::{Shutdown, TcpStream};
 
 const READ_TIMEOUT: Option<Duration> = Some(Duration::from_millis(5000));
 const WRITE_TIMEOUT: Option<Duration> = Some(Duration::from_millis(5000));
@@ -35,11 +36,13 @@ impl TcpServerTransport {
     /// Create a transport object. The socket will be bind to
     /// the given address.
     pub fn new(addr: Address) -> io::Result<TcpServerTransport> {
+        let poll = Poll::new()?;
+
         Ok(TcpServerTransport {
             addr,
             socket: None,
             pool: ThreadPool::new(4),
-            poll: Poll::new()?,
+            poll,
             events: Events::with_capacity(1),
         })
     }
@@ -57,10 +60,15 @@ where
 
     /// Try to bind to the socket address and set the socket if
     /// successfull, otherwise the result contains the error.
-    fn connect(&mut self) -> io::Result<()> {
-        let socket = TcpListener::bind(&self.addr.get_socket_addr().unwrap())?;
+    fn connect(&mut self) -> RpcResult<()> {
+        let socket_addr = match self.addr.get_socket_addr() {
+            Some(addr) => addr,
+            None => return Err(RpcError::NoSocketAddress),
+        };
+        let socket = TcpListener::bind(&socket_addr)?;
 
-        self.poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
+        self.poll
+            .register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
 
         self.socket = Some(socket);
 
@@ -69,8 +77,11 @@ where
 
     /// Wait for a connection request and read incoming data. It will
     /// then process the message and write the reply to the stream.
-    fn next(&self, f: Arc<Box<RequestProcessor<Req, Rep>>>) -> io::Result<()> {
-        let socket = self.socket.as_ref().unwrap();
+    fn next(&self, f: Arc<Box<RequestProcessor<Req, Rep>>>) -> RpcResult<()> {
+        let socket = match self.socket.as_ref() {
+            Some(socket) => socket,
+            None => return Err(RpcError::NotRunning),
+        };
 
         let (mut stream, _) = socket.accept_std()?;
 
@@ -87,24 +98,23 @@ where
                     let reply = f(msg);
 
                     out = serde_json::to_vec(&reply)?;
-                },
+                }
                 Err(e) => {
-                    println!("Decoding Error: {}", e);
                     let desc = String::from(e.description());
-                    let reply: Response<Rep> = Response::Error(RPCError::DecodingError(desc));
+                    let reply: Response<Rep> = Response::Error(ServerError::DecodingError(desc));
 
                     out = serde_json::to_vec(&reply)?;
-                },
+                }
             };
 
             stream.write_all(&out[..])?;
             Ok(())
-        });
+        })?;
 
         Ok(())
     }
 
-    fn wait(&mut self, timeout: Duration) -> io::Result<()> {
+    fn wait(&mut self, timeout: Duration) -> RpcResult<()> {
         self.poll.poll(&mut self.events, Some(timeout))?;
 
         Ok(())
@@ -136,16 +146,22 @@ where
 
         Connection {
             tx: Box::new(move |msg| {
-                let mut stream = TcpStream::connect(&addr.get_socket_addr().unwrap()).unwrap();
+                let socket_addr = match addr.get_socket_addr() {
+                    Some(addr) => addr,
+                    None => return Err(RpcError::NoSocketAddress),
+                };
 
-                let bin = serde_json::to_vec(&msg).unwrap();
-                stream.write_all(&bin).unwrap();
-                stream.shutdown(Shutdown::Write).unwrap();
+                let mut stream = TcpStream::connect(socket_addr)?;
+
+                let bin = serde_json::to_vec(&msg)?;
+
+                stream.write_all(&bin)?;
+                stream.shutdown(Shutdown::Write)?;
 
                 let mut buf = Vec::new();
-                stream.read_to_end(&mut buf).unwrap();
+                stream.read_to_end(&mut buf)?;
 
-                serde_json::from_reader(&buf[..]).unwrap()
+                Ok(serde_json::from_reader(&buf[..])?)
             }),
         }
     }

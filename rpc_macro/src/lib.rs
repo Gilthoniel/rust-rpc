@@ -39,13 +39,13 @@ fn derive_client_func(sig: &Signature, name: &Ident, param: &Type, out: &Type) -
   let func_name = &sig.ident;
 
   syn::parse_quote! {
-    pub fn #func_name(&self, arg: #param) -> Result<#out, RPCError> {
-      let r = self.send_message(Request::Data(ClientData::#name(arg)));
+    pub fn #func_name(&self, arg: #param) -> Result<#out, RpcError> {
+      let r = self.send_message(Request::Data(ClientData::#name(arg)))?;
         
       match r {
         Response::Data(ServerData::#name(value)) => Ok(value),
-        Response::Error(err) => Err(err),
-        _ => Err(RPCError::NoMatchingResponse),
+        Response::Error(err) => Err(RpcError::from_server_err(err)),
+        _ => Err(RpcError::InvalidResponseType),
       }
     }
   }
@@ -96,7 +96,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
 
   let result = quote! {
     use serde::{Serialize, Deserialize};
-    use super::{Request, Response, RPCError};
+    use super::{Request, Response, RpcError};
 
     /// Request enumerates the list of possible request messages sent
     /// by clients to a server to execute a request.
@@ -133,7 +133,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
         #client_name { s: t.connect() }
       }
 
-      fn send_message(&self, msg: ClientMessage) -> ServerMessage {
+      fn send_message(&self, msg: ClientMessage) -> RpcResult<ServerMessage> {
         self.s.send(msg)
       }
 

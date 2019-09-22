@@ -1,24 +1,19 @@
 extern crate serde;
 
+mod error;
+pub mod executor;
 pub mod group;
 pub mod transport;
-pub mod executor;
+
+pub use error::*;
 
 use group::Address;
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::io;
 use std::sync::{mpsc, Arc};
-use std::time::Duration;
 use std::thread::JoinHandle;
+use std::time::Duration;
 use transport::*;
-use serde::{Serialize, Deserialize};
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum RPCError {
-    BadRequest,
-    NoMatchingResponse,
-    DecodingError(String),
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request<T> {
@@ -27,7 +22,7 @@ pub enum Request<T> {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response<T> {
-    Error(RPCError),
+    Error(ServerError),
     Data(T),
 }
 
@@ -66,7 +61,7 @@ impl Server {
 
             loop {
                 match t.next(Arc::clone(&p)) {
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => match rx.try_recv() {
+                    Err(ref e) if e.would_block() => match rx.try_recv() {
                         Ok(_) => return, // received close announcement
                         _ => t.wait(Duration::from_millis(100)).unwrap(),
                     },
@@ -109,7 +104,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
-    fn hello_world() {
+    fn hello_world() -> RpcResult<()> {
         #[rpc_macro::service]
         trait Hello {
             fn hello(&self, arg: String) -> String;
@@ -134,12 +129,14 @@ mod tests {
 
         let c = HelloClient::new(TcpClientTransport::new(addr));
         let msg = String::from("deadbeef");
-        let r = c.hello(msg.clone()).unwrap();
+        let r = c.hello(msg.clone())?;
         assert_eq!(msg, r);
+
+        Ok(())
     }
 
     #[test]
-    fn counter() {
+    fn counter() -> RpcResult<()> {
         #[rpc_macro::service]
         trait Counter {
             fn counter(&self, v: u64) -> u64;
@@ -177,23 +174,27 @@ mod tests {
         let k = 10;
         for _ in 0..n {
             let addr = addr.clone();
-            let h = std::thread::spawn(move || {
+            let h = std::thread::spawn(move || -> RpcResult<()> {
                 let c = CounterClient::new(TcpClientTransport::new(addr));
 
                 for _ in 0..k {
-                    c.counter(1).unwrap();
+                    c.counter(1)?;
                 }
+
+                Ok(())
             });
 
             threads.push(h);
         }
 
         for th in threads {
-            th.join().unwrap();
+            th.join().unwrap()?;
         }
 
         let c = CounterClient::new(TcpClientTransport::new(addr));
-        let r = c.fetch(0).unwrap();
+        let r = c.fetch(0)?;
         assert_eq!(r, n * k);
+
+        Ok(())
     }
 }
