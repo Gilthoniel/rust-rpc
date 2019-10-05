@@ -20,18 +20,18 @@ fn hello_world() {
 
     #[rpc_macro::service]
     trait Hello {
-        fn hello(&self, arg: String) -> Result<String, HelloError>;
+        fn hello(&self, ctx: Context, arg: String) -> Result<String, HelloError>;
     }
+
+    let addr = Address::from_str("127.0.0.1:2000");
 
     struct HelloService;
 
     impl Hello for HelloService {
-        fn hello(&self, arg: String) -> Result<String, HelloError> {
+        fn hello(&self, _: Context, arg: String) -> Result<String, HelloError> {
             Ok(arg)
         }
     }
-
-    let addr = Address::from_str("127.0.0.1:2000");
 
     let mut srv = Server::new();
     let service = HelloService {};

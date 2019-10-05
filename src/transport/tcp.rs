@@ -112,7 +112,7 @@ where
             None => return Err(Error::NotRunning),
         };
 
-        let (mut stream, _) = match socket.accept_std() {
+        let (mut stream, sock_addr) = match socket.accept_std() {
             Ok(v) => v,
             Err(e) => {
                 // A WouldBlock error only means no connection yet
@@ -129,6 +129,9 @@ where
             }
         };
 
+        let out_addr = self.addr.clone();
+        let in_addr = Address::Socket(sock_addr);
+
         self.pool.execute(move || -> io::Result<()> {
             stream.set_read_timeout(READ_TIMEOUT)?;
             stream.set_write_timeout(WRITE_TIMEOUT)?;
@@ -136,7 +139,9 @@ where
             let mut buf = Vec::new();
             stream.read_to_end(&mut buf)?;
 
-            let reply = f(serde_json::from_slice(&buf[..])?);
+            let req = serde_json::from_slice(&buf[..])?;
+
+            let reply = f(req, out_addr, in_addr);
             let out = serde_json::to_vec(&reply)?;
 
             stream.write_all(&out[..])?;

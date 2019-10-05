@@ -32,7 +32,7 @@ fn derive_handler_arm(sig: &Signature, name: &Ident) -> Arm {
 
   syn::parse_quote! {
     ClientData::#name(arg) => {
-      let result = self.#func_name(arg);
+      let result = self.#func_name(ctx, arg);
 
       match result {
         Ok(value) => ServerData::#name(value),
@@ -81,7 +81,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
         let name = &Ident::new(name.as_ref(), syn::export::Span::call_site());
 
         let param: &Type;
-        if let FnArg::Typed(ref pt) = &m.sig.inputs[1] {
+        if let FnArg::Typed(ref pt) = &m.sig.inputs[2] {
             param = &pt.ty;
         } else {
           panic!("rpc function expects one argument");
@@ -124,6 +124,7 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
   let result = quote! {
     use serde::{Deserialize, Serialize};
     use rpc::transport::ClientTransport;
+    use rpc::Context;
     use std::error::Error;
     use std::panic::RefUnwindSafe;
 
@@ -140,14 +141,18 @@ pub fn service(_: TokenStream, item: TokenStream) -> TokenStream {
       #responses
     }
 
-    pub type RequestProcessor = dyn Fn(ClientData) -> ServerData + Send + Sync + RefUnwindSafe;
+    pub type RequestProcessor = dyn Fn(ClientData, Address, Address) -> ServerData + Send + Sync + RefUnwindSafe;
 
     pub trait #name_service: Sized + Sync + Send + RefUnwindSafe + 'static {
       #(#methods)*
 
       fn get_processor(self) -> Box<RequestProcessor> {
-        Box::new(move |msg| match msg {
-          #(#handlers),*
+        Box::new(move |msg, out_addr, in_addr| {
+          let ctx = Context::new(in_addr, out_addr);
+
+          match msg {
+            #(#handlers),*
+          }
         })
       }
     }

@@ -7,13 +7,32 @@ pub mod transport;
 pub use rpc_macro::service;
 
 use group::Address;
-use transport::{
-    RequestProcessor,
-    ServerTransport,
-};
 use std::fmt;
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
+use transport::{RequestProcessor, ServerTransport};
+
+pub struct Context {
+    in_addr: Address,
+    out_addr: Address,
+}
+
+impl Context {
+    pub fn new(in_addr: Address, out_addr: Address) -> Self {
+        Context {
+            in_addr,
+            out_addr,
+        }
+    }
+
+    pub fn get_in_addr(&self) -> &Address {
+        &self.in_addr
+    }
+
+    pub fn get_out_addr(&self) -> &Address {
+        &self.out_addr
+    }
+}
 
 pub struct Server {
     stop_tx: Option<mpsc::SyncSender<()>>,

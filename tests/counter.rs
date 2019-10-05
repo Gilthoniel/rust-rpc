@@ -23,8 +23,8 @@ fn counter() {
 
     #[rpc_macro::service]
     trait Counter {
-        fn counter(&self, v: u64) -> Result<u64, CounterError>;
-        fn fetch(&self, v: u64) -> Result<u64, CounterError>;
+        fn counter(&self, ctx: Context, v: u64) -> Result<u64, CounterError>;
+        fn fetch(&self, ctx: Context, v: u64) -> Result<u64, CounterError>;
     }
 
     struct CounterService {
@@ -32,7 +32,7 @@ fn counter() {
     }
 
     impl Counter for CounterService {
-        fn counter(&self, v: u64) -> Result<u64, CounterError> {
+        fn counter(&self, _: Context, v: u64) -> Result<u64, CounterError> {
             if v == 0 {
                 return Err(CounterError::IncrementError);
             }
@@ -41,7 +41,7 @@ fn counter() {
             Ok(prev + v)
         }
 
-        fn fetch(&self, _: u64) -> Result<u64, CounterError> {
+        fn fetch(&self, _: Context, _: u64) -> Result<u64, CounterError> {
             Ok(self.value.load(Ordering::Relaxed))
         }
     }

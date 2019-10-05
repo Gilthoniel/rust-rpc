@@ -20,13 +20,13 @@ fn error() -> Result<(), ()> {
 
     #[rpc_macro::service]
     trait Byzantine {
-        fn byzantine(&self, arg: u64) -> Result<u64, ByzantineError>;
+        fn byzantine(&self, ctx: Context, arg: u64) -> Result<u64, ByzantineError>;
     }
 
     struct ByzantineService;
 
     impl Byzantine for ByzantineService {
-        fn byzantine(&self, _: u64) -> Result<u64, ByzantineError> {
+        fn byzantine(&self, _: Context, _: u64) -> Result<u64, ByzantineError> {
             panic!("example panic in test");
         }
     }

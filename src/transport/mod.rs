@@ -6,7 +6,7 @@ use std::panic::RefUnwindSafe;
 
 /// Processor created by services that will be used by the server
 /// to process the requests sent by the clients.
-pub type RequestProcessor<Req, Rep> = dyn Fn(Req) -> Rep + Send + Sync + RefUnwindSafe;
+pub type RequestProcessor<Req, Rep> = dyn Fn(Req, Address, Address) -> Rep + Send + Sync + RefUnwindSafe;
 
 /// A server transport defines how the server will receive requests.
 pub trait ServerTransport<Req, Rep>: Send + 'static {

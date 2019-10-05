@@ -50,6 +50,25 @@ impl fmt::Display for Address {
     }
 }
 
+impl PartialEq for Address {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Address::Local(v) => {
+                if let Address::Local(ov) = other {
+                    return v == ov;
+                }
+                return false;
+            },
+            Address::Socket(addr) => {
+                if let Address::Socket(oa) = other {
+                    return addr == oa;
+                }
+                return false;
+            }
+        }
+    }
+}
+
 impl ToSocketAddrs for Address {
     type Iter = IntoIter<SocketAddr>;
 
