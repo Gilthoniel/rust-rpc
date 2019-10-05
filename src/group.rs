@@ -1,3 +1,4 @@
+use serde::{Serialize, Deserialize};
 use std::fmt;
 use std::io;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
@@ -7,7 +8,7 @@ use std::str::FromStr;
 /// Address can be local or distant. A local address will have
 /// a unique identifier and a distant address will have an ip
 /// and a port.
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Address {
     Local(String),
     Socket(SocketAddr),
